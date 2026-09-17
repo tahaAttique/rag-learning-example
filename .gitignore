@@ -1,0 +1,17 @@
+# .NET
+api/bin/
+api/obj/
+*.db
+*.db-shm
+*.db-wal
+
+# Node / Vite
+client/node_modules/
+client/dist/
+client/.vite/
+
+# Editor / OS
+.vs/
+.vscode/
+*.user
+.DS_Store
