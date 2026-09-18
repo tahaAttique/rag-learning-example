@@ -30,7 +30,9 @@ builder.Services.AddHttpClient<OllamaChatService>(client =>
 });
 
 builder.Services.AddSingleton<VectorStore>();
+builder.Services.AddSingleton<ConversationStore>();
 builder.Services.AddScoped<IngestionService>();
+builder.Services.AddScoped<AgentTools>();
 builder.Services.AddScoped<RagChatService>();
 
 var app = builder.Build();
@@ -41,8 +43,6 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("AllowReactDev");
-app.UseHttpsRedirection();
-app.UseAuthorization();
 app.MapControllers();
 
 app.Run();

@@ -12,13 +12,22 @@ export interface SourceChunk {
   score: number;
 }
 
+export interface ToolCallTrace {
+  toolName: string;
+  arguments: string;
+  result: string;
+}
+
 export interface ChatResponse {
   answer: string;
   sources: SourceChunk[];
+  toolCalls: ToolCallTrace[];
+  conversationId: string;
 }
 
 export interface ChatTurn {
   question: string;
   answer: string;
   sources: SourceChunk[];
+  toolCalls: ToolCallTrace[];
 }

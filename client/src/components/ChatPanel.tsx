@@ -7,6 +7,7 @@ export function ChatPanel() {
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
 
   async function handleAsk(e: React.FormEvent) {
     e.preventDefault();
@@ -16,8 +17,12 @@ export function ChatPanel() {
     setLoading(true);
     setError(null);
     try {
-      const response = await askQuestion(trimmed);
-      setTurns((prev) => [...prev, { question: trimmed, answer: response.answer, sources: response.sources }]);
+      const response = await askQuestion(trimmed, conversationId);
+      setConversationId(response.conversationId);
+      setTurns((prev) => [
+        ...prev,
+        { question: trimmed, answer: response.answer, sources: response.sources, toolCalls: response.toolCalls },
+      ]);
       setQuestion("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -28,13 +33,44 @@ export function ChatPanel() {
 
   return (
     <div className="panel chat-panel">
-      <h2>Ask your documents</h2>
+      <div className="panel-header">
+        <h2>Ask your documents</h2>
+        {turns.length > 0 && (
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => {
+              setTurns([]);
+              setConversationId(null);
+              setError(null);
+            }}
+          >
+            New conversation
+          </button>
+        )}
+      </div>
 
       <div className="chat-history">
         {turns.length === 0 && <p className="empty">Upload a PDF, then ask a question about it.</p>}
         {turns.map((turn, i) => (
           <div key={i} className="chat-turn">
             <p className="question">{turn.question}</p>
+
+            {turn.toolCalls.length > 0 && (
+              <details className="tool-trace" open>
+                <summary>{turn.toolCalls.length} tool call(s)</summary>
+                {turn.toolCalls.map((t, j) => (
+                  <div key={j} className="tool-call">
+                    <div className="tool-call-name">
+                      {t.toolName}
+                      <span className="tool-call-args">({t.arguments})</span>
+                    </div>
+                    <div className="tool-call-result">{t.result}</div>
+                  </div>
+                ))}
+              </details>
+            )}
+
             <p className="answer">{turn.answer}</p>
 
             {turn.sources.length > 0 && (

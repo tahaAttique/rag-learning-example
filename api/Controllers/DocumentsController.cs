@@ -14,6 +14,13 @@ public class DocumentsController(IngestionService ingestion, VectorStore store) 
         return Ok(docs);
     }
 
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(string id)
+    {
+        var deleted = await store.DeleteDocumentAsync(id);
+        return deleted ? NoContent() : NotFound();
+    }
+
     [HttpPost]
     [RequestSizeLimit(50_000_000)]
     public async Task<IActionResult> Upload(IFormFile file, CancellationToken ct)

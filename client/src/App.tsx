@@ -22,7 +22,11 @@ function App() {
       </header>
 
       <main>
-        <DocumentPanel documents={documents} onUploaded={(doc) => setDocuments((prev) => [doc, ...prev])} />
+        <DocumentPanel
+          documents={documents}
+          onUploaded={(doc) => setDocuments((prev) => [doc, ...prev])}
+          onDeleted={(id) => setDocuments((prev) => prev.filter((d) => d.id !== id))}
+        />
         <ChatPanel />
       </main>
     </div>

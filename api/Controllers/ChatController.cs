@@ -14,7 +14,7 @@ public class ChatController(RagChatService chat) : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Question))
             return BadRequest("Question is required.");
 
-        var response = await chat.AskAsync(request.Question, ct);
+        var response = await chat.AskAsync(request.Question, request.ConversationId, ct);
         return Ok(response);
     }
 }

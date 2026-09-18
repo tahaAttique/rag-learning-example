@@ -72,6 +72,21 @@ public class VectorStore
         await cmd.ExecuteNonQueryAsync();
     }
 
+    public async Task<bool> DeleteDocumentAsync(string documentId)
+    {
+        using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync();
+
+        var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            DELETE FROM Chunks WHERE DocumentId = $id;
+            DELETE FROM Documents WHERE Id = $id;
+            """;
+        cmd.Parameters.AddWithValue("$id", documentId);
+
+        return await cmd.ExecuteNonQueryAsync() > 0;
+    }
+
     public async Task<List<DocumentSummary>> ListDocumentsAsync()
     {
         using var conn = new SqliteConnection(_connectionString);

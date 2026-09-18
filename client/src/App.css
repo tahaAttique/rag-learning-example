@@ -74,11 +74,51 @@ main {
 
 .document-list li {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
   font-size: 13px;
   padding: 6px 0;
   border-bottom: 1px solid #2a2e37;
+}
+
+.panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: #6f9bf7;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.delete-button {
+  background: none;
+  border: none;
+  color: #6b7280;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
+.delete-button:hover:not(:disabled) {
+  color: #f87171;
+}
+
+.delete-button:disabled {
+  cursor: not-allowed;
 }
 
 .doc-name {
@@ -127,6 +167,42 @@ main {
   margin: 0 0 8px;
   white-space: pre-wrap;
   line-height: 1.5;
+}
+
+.tool-trace {
+  font-size: 12px;
+  color: #9a9a9a;
+  margin-bottom: 8px;
+}
+
+.tool-trace summary {
+  cursor: pointer;
+}
+
+.tool-call {
+  margin-top: 6px;
+  padding: 8px;
+  background: #161b12;
+  border: 1px solid #2b3a22;
+  border-radius: 6px;
+}
+
+.tool-call-name {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: #8fd67a;
+  margin-bottom: 4px;
+}
+
+.tool-call-args {
+  color: #6b7280;
+  margin-left: 6px;
+}
+
+.tool-call-result {
+  font-size: 12px;
+  white-space: pre-wrap;
+  color: #c7c7c7;
 }
 
 .sources {

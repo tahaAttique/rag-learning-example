@@ -1,14 +1,16 @@
 import { useRef, useState } from "react";
 import type { DocumentSummary } from "../types";
-import { uploadDocument } from "../api/client";
+import { deleteDocument, uploadDocument } from "../api/client";
 
 interface Props {
   documents: DocumentSummary[];
   onUploaded: (doc: DocumentSummary) => void;
+  onDeleted: (id: string) => void;
 }
 
-export function DocumentPanel({ documents, onUploaded }: Props) {
+export function DocumentPanel({ documents, onUploaded, onDeleted }: Props) {
   const [uploading, setUploading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -26,6 +28,19 @@ export function DocumentPanel({ documents, onUploaded }: Props) {
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function handleDelete(doc: DocumentSummary) {
+    setDeletingId(doc.id);
+    setError(null);
+    try {
+      await deleteDocument(doc.id);
+      onDeleted(doc.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed.");
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -51,8 +66,19 @@ export function DocumentPanel({ documents, onUploaded }: Props) {
         {documents.length === 0 && <li className="empty">No documents yet.</li>}
         {documents.map((doc) => (
           <li key={doc.id}>
-            <span className="doc-name">{doc.name}</span>
+            <span className="doc-name" title={doc.name}>
+              {doc.name}
+            </span>
             <span className="doc-meta">{doc.chunkCount} chunks</span>
+            <button
+              type="button"
+              className="delete-button"
+              onClick={() => handleDelete(doc)}
+              disabled={deletingId === doc.id}
+              title="Delete document"
+            >
+              {deletingId === doc.id ? "..." : "×"}
+            </button>
           </li>
         ))}
       </ul>

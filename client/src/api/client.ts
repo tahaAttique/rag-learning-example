@@ -23,10 +23,15 @@ export function uploadDocument(file: File): Promise<DocumentSummary> {
   }).then((r) => handle(r));
 }
 
-export function askQuestion(question: string): Promise<ChatResponse> {
+export function askQuestion(question: string, conversationId: string | null): Promise<ChatResponse> {
   return fetch(`${API_BASE}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, conversationId }),
   }).then((r) => handle(r));
+}
+
+export async function deleteDocument(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/documents/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Failed to delete document (status ${res.status})`);
 }

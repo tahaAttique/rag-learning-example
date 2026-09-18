@@ -2,29 +2,76 @@ using RagExample.Api.Models;
 
 namespace RagExample.Api.Services;
 
-// The "generation" half of RAG: embed the question, retrieve the closest chunks,
-// stuff them into the system prompt, and ask the local model to answer from that context only.
-public class RagChatService(OllamaEmbeddingService embeddings, VectorStore store, OllamaChatService chat)
+// The agent loop. Instead of always fetching context before asking the model anything
+// (the earlier, "static RAG" version of this class), the model is given tools and decides
+// for itself whether, when, and how many times to call them. The loop is:
+//
+//   ask the model -> did it request a tool call?
+//     yes -> run the tool, feed the result back as a new message, ask again
+//     no  -> its content is the final answer, stop
+//
+// A round cap guards against a model that never stops calling tools.
+public class RagChatService(OllamaChatService chat, AgentTools tools, ConversationStore conversations)
 {
-    public async Task<ChatResponse> AskAsync(string question, CancellationToken ct = default)
+    private const int MaxToolRounds = 5;
+
+    private const string SystemPrompt = """
+        You answer questions about the user's uploaded documents, and you can do arithmetic.
+
+        You have no built-in knowledge of the documents' contents - use the search_documents
+        tool to find relevant passages before answering anything document-specific. If it finds
+        nothing relevant, say you don't know rather than guessing.
+
+        Use the calculator tool for every calculation, even simple ones. Never do arithmetic in
+        your head. Expressions must contain only literal numbers - if you need a value from a
+        document, search for it first, then put the actual number in the expression.
+
+        Earlier turns of the conversation are included, so resolve references like "it" or
+        "the second one" against them.
+        """;
+
+    public async Task<ChatResponse> AskAsync(string question, string? conversationId, CancellationToken ct = default)
     {
-        var queryEmbedding = await embeddings.EmbedAsync(question, ct);
-        var sources = await store.SearchAsync(queryEmbedding, topK: 4);
+        var id = string.IsNullOrWhiteSpace(conversationId) ? Guid.NewGuid().ToString("N") : conversationId;
 
-        var context = string.Join("\n\n---\n\n",
-            sources.Select(s => $"[Source: {s.DocumentName}, chunk {s.ChunkIndex}]\n{s.Text}"));
+        var messages = new List<ChatMessage> { new() { Role = "system", Content = SystemPrompt } };
+        messages.AddRange(conversations.GetHistory(id));
 
-        var systemPrompt = $"""
-            You are a helpful assistant answering questions using ONLY the context below,
-            which was retrieved from the user's uploaded documents.
-            If the answer isn't contained in the context, say you don't know - do not make things up.
+        var userMessage = new ChatMessage { Role = "user", Content = question };
+        messages.Add(userMessage);
 
-            Context:
-            {context}
-            """;
+        var allSources = new List<SourceChunk>();
+        var toolTrace = new List<ToolCallTrace>();
 
-        var answer = await chat.CompleteAsync(systemPrompt, question, ct);
+        for (var round = 0; round < MaxToolRounds; round++)
+        {
+            var reply = await chat.ChatAsync(messages, AgentTools.Definitions, ct);
 
-        return new ChatResponse(answer, sources);
+            if (reply.ToolCalls is not { Count: > 0 })
+            {
+                conversations.Append(id, userMessage, new ChatMessage { Role = "assistant", Content = reply.Content });
+                return new ChatResponse(reply.Content, allSources, toolTrace, id);
+            }
+
+            messages.Add(reply);
+
+            foreach (var call in reply.ToolCalls)
+            {
+                var (resultText, sources) = await tools.ExecuteAsync(call.Name, call.Arguments, ct);
+                allSources.AddRange(sources);
+                toolTrace.Add(new ToolCallTrace(call.Name, call.Arguments.GetRawText(), resultText));
+
+                messages.Add(new ChatMessage
+                {
+                    Role = "tool",
+                    ToolName = call.Name,
+                    Content = resultText,
+                });
+            }
+        }
+
+        const string giveUp = "I wasn't able to finish answering after several tool calls - try rephrasing the question.";
+        conversations.Append(id, userMessage, new ChatMessage { Role = "assistant", Content = giveUp });
+        return new ChatResponse(giveUp, allSources, toolTrace, id);
     }
 }

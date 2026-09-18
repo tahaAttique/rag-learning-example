@@ -1,6 +1,36 @@
-@RagExample.Api_HostAddress = http://localhost:5263
+@host = http://localhost:5263
 
-GET {{RagExample.Api_HostAddress}}/weatherforecast/
+### List ingested documents
+GET {{host}}/api/documents
 Accept: application/json
 
-###
+### Ask a question (runs the agentic tool-calling loop)
+POST {{host}}/api/chat
+Content-Type: application/json
+
+{
+  "question": "What is 250 multiplied by 4?"
+}
+
+### Follow-up in the same conversation (paste conversationId from the response above)
+POST {{host}}/api/chat
+Content-Type: application/json
+
+{
+  "question": "Now divide that result by 8.",
+  "conversationId": "PASTE_CONVERSATION_ID_HERE"
+}
+
+### Delete a document (paste an id from the list above)
+DELETE {{host}}/api/documents/PASTE_DOCUMENT_ID_HERE
+
+### Upload a PDF (set a real path before sending)
+POST {{host}}/api/documents
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="file"; filename="sample.pdf"
+Content-Type: application/pdf
+
+< ./sample.pdf
+--boundary--
