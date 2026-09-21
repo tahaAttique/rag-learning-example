@@ -102,6 +102,23 @@ main {
   text-decoration: underline;
 }
 
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.autoplay-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #9a9a9a;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 .delete-button {
   background: none;
   border: none;
@@ -261,4 +278,54 @@ main {
 .upload-button:has(input:disabled) {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.chat-form .mic-button {
+  padding: 10px 14px;
+  background: #2a2e37;
+  font-size: 16px;
+}
+
+.chat-form .mic-button.recording {
+  background: #b91c1c;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-form .mic-button.recording {
+    animation: none;
+  }
+}
+
+.answer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.speak-button {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid #2a2e37;
+  border-radius: 6px;
+  color: #9a9a9a;
+  font-size: 12px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.speak-button:hover:not(:disabled) {
+  border-color: #3b6ef6;
+  color: #e6e6e6;
+}
+
+.speak-button:disabled {
+  cursor: default;
+  color: #6f9bf7;
 }

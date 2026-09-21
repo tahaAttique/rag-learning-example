@@ -26,6 +26,9 @@ export interface ChatResponse {
 }
 
 export interface ChatTurn {
+  // Client-side only: a stable key for React lists and for tracking which answer is
+  // being spoken. Array index would shift if turns were ever removed or reordered.
+  id: string;
   question: string;
   answer: string;
   sources: SourceChunk[];

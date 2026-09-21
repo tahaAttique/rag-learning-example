@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 using RagExample.Api.Models;
 
@@ -44,7 +45,7 @@ public class VectorStore
     {
         var id = Guid.NewGuid().ToString("N");
 
-        using var conn = new SqliteConnection(_connectionString);
+        await using var conn = new SqliteConnection(_connectionString);
         await conn.OpenAsync();
         var cmd = conn.CreateCommand();
         cmd.CommandText = "INSERT INTO Documents (Id, Name, UploadedAt) VALUES ($id, $name, $uploadedAt)";
@@ -58,7 +59,7 @@ public class VectorStore
 
     public async Task AddChunkAsync(string documentId, int chunkIndex, string text, float[] embedding)
     {
-        using var conn = new SqliteConnection(_connectionString);
+        await using var conn = new SqliteConnection(_connectionString);
         await conn.OpenAsync();
         var cmd = conn.CreateCommand();
         cmd.CommandText = """
@@ -74,22 +75,30 @@ public class VectorStore
 
     public async Task<bool> DeleteDocumentAsync(string documentId)
     {
-        using var conn = new SqliteConnection(_connectionString);
+        await using var conn = new SqliteConnection(_connectionString);
         await conn.OpenAsync();
 
+        // Both deletes in one transaction: a document row surviving without its chunks
+        // (or the reverse) would leave the store describing documents it can't search.
+        await using var tx = await conn.BeginTransactionAsync();
+
         var cmd = conn.CreateCommand();
+        cmd.Transaction = (SqliteTransaction)tx;
         cmd.CommandText = """
             DELETE FROM Chunks WHERE DocumentId = $id;
             DELETE FROM Documents WHERE Id = $id;
             """;
         cmd.Parameters.AddWithValue("$id", documentId);
 
-        return await cmd.ExecuteNonQueryAsync() > 0;
+        var affected = await cmd.ExecuteNonQueryAsync();
+        await tx.CommitAsync();
+
+        return affected > 0;
     }
 
     public async Task<List<DocumentSummary>> ListDocumentsAsync()
     {
-        using var conn = new SqliteConnection(_connectionString);
+        await using var conn = new SqliteConnection(_connectionString);
         await conn.OpenAsync();
         var cmd = conn.CreateCommand();
         cmd.CommandText = """
@@ -101,14 +110,14 @@ public class VectorStore
             """;
 
         var results = new List<DocumentSummary>();
-        using var reader = await cmd.ExecuteReaderAsync();
+        await using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
             results.Add(new DocumentSummary(
                 reader.GetString(0),
                 reader.GetString(1),
                 reader.GetInt32(3),
-                DateTime.Parse(reader.GetString(2))));
+                DateTime.Parse(reader.GetString(2), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)));
         }
 
         return results;
@@ -127,7 +136,7 @@ public class VectorStore
 
     private async Task<List<(string DocumentName, int ChunkIndex, string Text, float[] Embedding)>> GetAllChunksAsync()
     {
-        using var conn = new SqliteConnection(_connectionString);
+        await using var conn = new SqliteConnection(_connectionString);
         await conn.OpenAsync();
         var cmd = conn.CreateCommand();
         cmd.CommandText = """
@@ -137,7 +146,7 @@ public class VectorStore
             """;
 
         var results = new List<(string, int, string, float[])>();
-        using var reader = await cmd.ExecuteReaderAsync();
+        await using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
             results.Add((
@@ -152,6 +161,12 @@ public class VectorStore
 
     public static double CosineSimilarity(float[] a, float[] b)
     {
+        // Different embedding models produce different vector lengths, and chunks are
+        // embedded at upload time - so switching Ollama:EmbeddingModel leaves older chunks
+        // stored at the old dimension. Scoring those as 0 makes them simply never match,
+        // instead of throwing and taking every search down with them. Re-ingest to fix.
+        if (a.Length != b.Length) return 0;
+
         double dot = 0, normA = 0, normB = 0;
         for (var i = 0; i < a.Length; i++)
         {

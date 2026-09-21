@@ -104,8 +104,12 @@ Download from [ollama.com](https://ollama.com) (or `winget install Ollama.Ollama
 
 ```bash
 ollama pull nomic-embed-text   # embeddings
-ollama pull llama3.2           # generation
+ollama pull qwen2.5:7b         # generation
 ```
+
+These are the two models `api/appsettings.json` is configured for (`Ollama:EmbeddingModel`
+and `Ollama:ChatModel`). A smaller generation model works if 7B is too slow on your
+hardware — see *Model size dominates accuracy* below for what you give up.
 
 Ollama runs as a background service on `http://localhost:11434` once installed.
 
@@ -139,6 +143,32 @@ Open the app, upload a PDF, then ask a question about its contents. Each answer 
 Those two views are the fastest way to build intuition for why RAG answers are sometimes wrong
 (bad retrieval, or the model never searching at all) vs. right.
 
+## Talking to it
+
+You can ask by voice instead of typing (🎤), and answers are read back aloud — automatically
+while *Auto-play answers* is ticked, or on demand via 🔊 on any answer.
+
+Both directions run **entirely in the browser**, through the Web Speech API:
+
+| Direction | API | Where it runs |
+|---|---|---|
+| Speech → text | `SpeechRecognition` (`client/src/hooks/useVoiceRecorder.ts`) | Browser |
+| Text → speech | `SpeechSynthesis` (`ChatPanel.playAnswer`) | Browser |
+
+There is no speech endpoint on the API and no third-party voice service — no key, no cost,
+nothing added to the server. That is the same trade the rest of the app makes with Ollama:
+lower quality than a hosted service, but local and free.
+
+The catch is browser support. `SpeechRecognition` is **Chrome and Edge only** — Firefox and
+Safari don't implement it, so the mic button is disabled there (`useVoiceRecorder` reports
+`isSupported`, rather than failing once you click). `SpeechSynthesis` is supported
+everywhere. Note that Chrome's implementation sends audio to a Google service for
+recognition, so it needs a network connection and isn't as local as the rest of the stack.
+
+Swapping in a server-side speech service (Whisper via Ollama, ElevenLabs, etc.) means adding
+a controller that takes an audio blob and returns text, and having `useVoiceRecorder` record
+with `MediaRecorder` and POST to it instead — the rest of the UI doesn't change.
+
 ## Known gaps (deliberate — good exercises)
 
 - **No similarity threshold — on purpose.** `Retrieval:TopK` returns the N closest chunks even
@@ -151,9 +181,14 @@ Those two views are the fastest way to build intuition for why RAG answers are s
   anyway to see the failure yourself.
 - **Conversation memory is in-process.** `ConversationStore` is a dictionary in memory, so
   history dies with the process and isn't shared across instances. Redis or a table would fix it.
-- **Re-ingest after changing extraction or chunking.** Chunks and embeddings are computed at
-  upload time, so changing `PdfTextExtractor` or `TextChunker` does nothing to documents already
-  in the database. `DELETE /api/documents/{id}`, then re-upload.
+- **Re-ingest after changing extraction, chunking, or the embedding model.** Chunks and
+  embeddings are computed at upload time, so changing `PdfTextExtractor`, `TextChunker`, or
+  `Ollama:EmbeddingModel` does nothing to documents already in the database.
+  `DELETE /api/documents/{id}`, then re-upload. Changing the embedding model is the harsh
+  case: the new vectors usually have a different length from the stored ones, and vectors of
+  different lengths can't be compared at all. `VectorStore.CosineSimilarity` scores that
+  mismatch as 0 so one stale chunk can't crash every search — but those chunks are then
+  invisible to retrieval until re-ingested.
 - **Model size dominates accuracy.** Small models (3B) chain tools badly and misread
   layout-sensitive documents — e.g. on a resume where the employer is on the line *above* the
   job title, a 3B model pairs each title with the wrong company. 7B+ handles it. On CPU-only
@@ -173,8 +208,8 @@ Those two views are the fastest way to build intuition for why RAG answers are s
   in `Definitions` — e.g. a `get_today` tool, which the model needs since it has no clock.
 - **Embedding model** — swap `nomic-embed-text` for another Ollama embedding model and compare
   retrieval quality.
-- **Chat model** — try a bigger local model (`ollama pull qwen2.5:7b`, etc.) and see how much
-  answer quality improves, or point `OllamaChatService` at a hosted model like Claude for
-  comparison.
+- **Chat model** — swap `Ollama:ChatModel` for a smaller model (`llama3.2`) or a larger one
+  (`qwen2.5:14b`) and watch how much tool-chaining accuracy moves with size, or point
+  `OllamaChatService` at a hosted model like Claude for comparison.
 - **Vector store** — replace `VectorStore`'s brute-force search with `sqlite-vec`, pgvector, or
   Qdrant once you want to see how a real vector index scales.
