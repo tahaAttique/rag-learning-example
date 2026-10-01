@@ -11,7 +11,7 @@ namespace RagExample.Api.Services;
 //     no  -> its content is the final answer, stop
 //
 // A round cap guards against a model that never stops calling tools.
-public class RagChatService(OllamaChatService chat, AgentTools tools, ConversationStore conversations)
+public class RagChatService(IChatService chat, AgentTools tools, ConversationStore conversations)
 {
     private const int MaxToolRounds = 5;
 
@@ -64,7 +64,7 @@ public class RagChatService(OllamaChatService chat, AgentTools tools, Conversati
                 messages.Add(new ChatMessage
                 {
                     Role = "tool",
-                    ToolName = call.Name,
+                    ToolCallId = call.Id,
                     Content = resultText,
                 });
             }

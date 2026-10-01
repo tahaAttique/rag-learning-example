@@ -22,7 +22,7 @@ question's vector" — measured here with **cosine similarity**.
 **Ingestion** (`POST /api/documents`):
 ```
 PDF -> extract text (PdfPig) -> split into overlapping chunks (TextChunker)
-     -> embed each chunk (Ollama) -> store text + vector in SQLite (VectorStore)
+     -> embed each chunk (Gemini) -> store text + vector in SQLite (VectorStore)
 ```
 
 **Query** (`POST /api/chat`) — this is an *agentic* loop, not a fixed pipeline. The model is
@@ -70,15 +70,25 @@ No native vector extension, nothing hidden — you can read the whole retrieval 
 one file (`api/Services/VectorStore.cs`). It's fine up to tens of thousands of chunks; a real
 vector database (pgvector, Qdrant, etc.) is a drop-in upgrade once you outgrow it.
 
-Both embeddings and the answering model run locally through [Ollama](https://ollama.com) —
-no API key, no cost, works offline. `OllamaChatService` is a thin, swappable wrapper; pointing
-it at Claude or another hosted model instead is a small, contained change once you want better
-answer quality than a small local model gives.
+Both embedding and chat go through Google's Gemini API — specifically its
+[OpenAI-compatible endpoint](https://ai.google.dev/gemini-api/docs/openai), so `Chat:BaseUrl`,
+`Chat:Model` and `Chat:ApiKey` also work unchanged against Groq, Cerebras, OpenRouter, or
+any other provider that speaks the same wire format; `OpenAiCompatibleChatService` and
+`OpenAiCompatibleEmbeddingService` don't hardcode Google anywhere except the default URL in
+`appsettings.json`.
+
+This means every question and every retrieved document chunk — and every chunk of every
+document you upload, since embedding happens at ingestion time — leaves your machine and
+goes to Google. There is no local/offline mode in this version; see *Setup* below for the
+API key you need before anything works.
+
+For a file-by-file walkthrough of how everything works, see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Project layout
 
 ```
-api/      ASP.NET Core Web API (.NET 9) — ingestion + retrieval + local LLM calls
+api/      ASP.NET Core Web API (.NET 9) — ingestion + retrieval + Gemini calls
 client/   React + TypeScript (Vite) — upload UI + chat UI
 ```
 
@@ -98,20 +108,30 @@ traffic. Sample requests are in `api/RagExample.Api.http`.
 
 ## Setup
 
-### 1. Install Ollama and pull the two models
+### 1. Get a Gemini API key
 
-Download from [ollama.com](https://ollama.com) (or `winget install Ollama.Ollama`), then:
+Get one from [aistudio.google.com](https://aistudio.google.com/apikey), then store it with
+user-secrets so it never reaches source control (and never ends up in `appsettings.json`,
+which is committed):
 
 ```bash
-ollama pull nomic-embed-text   # embeddings
-ollama pull qwen2.5:7b         # generation
+cd api
+dotnet user-secrets set "Chat:ApiKey" "<your-key>"
 ```
 
-These are the two models `api/appsettings.json` is configured for (`Ollama:EmbeddingModel`
-and `Ollama:ChatModel`). A smaller generation model works if 7B is too slow on your
-hardware — see *Model size dominates accuracy* below for what you give up.
+`api/appsettings.json` is preconfigured for `gemini-3.5-flash-lite` for chat and
+`gemini-embedding-001` for embeddings (`Chat:Model` / `Chat:EmbeddingModel`). Free-tier
+quotas are small and *per model* — one question spends several requests (embed, search,
+answer) — so if you hit a "daily quota used up" error, switch `Chat:Model` to another model or
+wait for the reset. Rate-limit and overload responses are retried automatically. Neither
+service hardcodes Google, so pointing `Chat:BaseUrl`, `Chat:Model`, `Chat:EmbeddingModel`
+and `Chat:ApiKey` at Groq, Cerebras, OpenRouter or anything else speaking the same format
+is the whole migration.
 
-Ollama runs as a background service on `http://localhost:11434` once installed.
+> Free API tiers frequently carry weaker data-retention and training guarantees than paid
+> ones. Check your provider's current terms before uploading documents you care about —
+> both the document content (at upload) and the retrieved chunks (with every question)
+> are sent to it.
 
 ### 2. Run the API
 
@@ -156,8 +176,8 @@ Both directions run **entirely in the browser**, through the Web Speech API:
 | Text → speech | `SpeechSynthesis` (`ChatPanel.playAnswer`) | Browser |
 
 There is no speech endpoint on the API and no third-party voice service — no key, no cost,
-nothing added to the server. That is the same trade the rest of the app makes with Ollama:
-lower quality than a hosted service, but local and free.
+nothing added to the server. Unlike the chat and embedding calls, this part of the app has
+no hosted dependency at all.
 
 The catch is browser support. `SpeechRecognition` is **Chrome and Edge only** — Firefox and
 Safari don't implement it, so the mic button is disabled there (`useVoiceRecorder` reports
@@ -165,8 +185,8 @@ Safari don't implement it, so the mic button is disabled there (`useVoiceRecorde
 everywhere. Note that Chrome's implementation sends audio to a Google service for
 recognition, so it needs a network connection and isn't as local as the rest of the stack.
 
-Swapping in a server-side speech service (Whisper via Ollama, ElevenLabs, etc.) means adding
-a controller that takes an audio blob and returns text, and having `useVoiceRecorder` record
+Swapping in a server-side speech service (Whisper, ElevenLabs, etc.) means adding a
+controller that takes an audio blob and returns text, and having `useVoiceRecorder` record
 with `MediaRecorder` and POST to it instead — the rest of the UI doesn't change.
 
 ## Known gaps (deliberate — good exercises)
@@ -183,16 +203,16 @@ with `MediaRecorder` and POST to it instead — the rest of the UI doesn't chang
   history dies with the process and isn't shared across instances. Redis or a table would fix it.
 - **Re-ingest after changing extraction, chunking, or the embedding model.** Chunks and
   embeddings are computed at upload time, so changing `PdfTextExtractor`, `TextChunker`, or
-  `Ollama:EmbeddingModel` does nothing to documents already in the database.
+  `Chat:EmbeddingModel` does nothing to documents already in the database.
   `DELETE /api/documents/{id}`, then re-upload. Changing the embedding model is the harsh
   case: the new vectors usually have a different length from the stored ones, and vectors of
   different lengths can't be compared at all. `VectorStore.CosineSimilarity` scores that
   mismatch as 0 so one stale chunk can't crash every search — but those chunks are then
   invisible to retrieval until re-ingested.
-- **Model size dominates accuracy.** Small models (3B) chain tools badly and misread
+- **Model size dominates accuracy.** Small/cheap models chain tools badly and misread
   layout-sensitive documents — e.g. on a resume where the employer is on the line *above* the
-  job title, a 3B model pairs each title with the wrong company. 7B+ handles it. On CPU-only
-  hardware this is a direct speed/accuracy trade; set `Ollama:ChatModel` in `appsettings.json`.
+  job title, a small model pairs each title with the wrong company. Set `Chat:Model` in
+  `appsettings.json` to trade cost/speed against accuracy.
 - **Flattening a PDF loses layout.** Two-column layouts, tables, and forms encode meaning in
   *position*, which becomes ambiguous once flattened to lines. `ContentOrderTextExtractor` does
   layout analysis to recover reading order, but it can't fully recover a table's structure.
@@ -206,10 +226,10 @@ with `MediaRecorder` and POST to it instead — the rest of the UI doesn't chang
   prompt. Reword it and watch the model's tool choices change.
 - **Add a third tool.** The dispatch is one `switch` in `AgentTools.ExecuteAsync` plus one entry
   in `Definitions` — e.g. a `get_today` tool, which the model needs since it has no clock.
-- **Embedding model** — swap `nomic-embed-text` for another Ollama embedding model and compare
-  retrieval quality.
-- **Chat model** — swap `Ollama:ChatModel` for a smaller model (`llama3.2`) or a larger one
-  (`qwen2.5:14b`) and watch how much tool-chaining accuracy moves with size, or point
-  `OllamaChatService` at a hosted model like Claude for comparison.
+- **Embedding model** — swap `Chat:EmbeddingModel` for another Gemini embedding model and
+  compare retrieval quality.
+- **Chat model** — swap `Chat:Model`/`Chat:BaseUrl`/`Chat:ApiKey` for a different
+  OpenAI-compatible provider (Groq, Cerebras, OpenRouter, …) or model size, and watch how
+  much tool-chaining accuracy moves.
 - **Vector store** — replace `VectorStore`'s brute-force search with `sqlite-vec`, pgvector, or
   Qdrant once you want to see how a real vector index scales.

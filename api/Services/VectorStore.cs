@@ -162,7 +162,7 @@ public class VectorStore
     public static double CosineSimilarity(float[] a, float[] b)
     {
         // Different embedding models produce different vector lengths, and chunks are
-        // embedded at upload time - so switching Ollama:EmbeddingModel leaves older chunks
+        // embedded at upload time - so switching Chat:EmbeddingModel leaves older chunks
         // stored at the old dimension. Scoring those as 0 makes them simply never match,
         // instead of throwing and taking every search down with them. Re-ingest to fix.
         if (a.Length != b.Length) return 0;

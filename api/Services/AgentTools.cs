@@ -12,7 +12,7 @@ namespace RagExample.Api.Services;
 // The model has to pick between them from their descriptions alone. Those description
 // strings are prompt engineering: they are the only thing telling the model when each
 // tool applies. Reword them and the model's choices change.
-public class AgentTools(OllamaEmbeddingService embeddings, VectorStore store, IConfiguration config)
+public class AgentTools(OpenAiCompatibleEmbeddingService embeddings, VectorStore store, IConfiguration config)
 {
     private readonly int _topK = config.GetValue<int?>("Retrieval:TopK") ?? 4;
 

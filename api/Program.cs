@@ -15,19 +15,30 @@ builder.Services.AddCors(options =>
     });
 });
 
-var ollamaBaseUrl = new Uri(builder.Configuration["Ollama:BaseUrl"] ?? "http://localhost:11434");
+var chatBaseUrl = new Uri(builder.Configuration["Chat:BaseUrl"]
+    ?? throw new InvalidOperationException("Chat:BaseUrl is not configured."));
 
-builder.Services.AddHttpClient<OllamaEmbeddingService>(client =>
+// Chat and embeddings both go through Gemini's OpenAI-compatible endpoint, so both typed
+// clients share the same base URL; OpenAiCompatibleChatService also works unchanged against
+// Groq, Cerebras, OpenRouter, etc. if Chat:BaseUrl/Model/ApiKey are pointed elsewhere.
+// Both clients retry rate-limit and overload responses. The 2-minute timeout covers the
+// whole call including retries, so a provider that stays down fails in bounded time.
+builder.Services.AddTransient<RetryTransientHandler>();
+
+builder.Services.AddHttpClient<IChatService, OpenAiCompatibleChatService>(client =>
 {
-    client.BaseAddress = ollamaBaseUrl;
+    client.BaseAddress = chatBaseUrl;
     client.Timeout = TimeSpan.FromMinutes(2);
-});
+}).AddHttpMessageHandler<RetryTransientHandler>();
 
-builder.Services.AddHttpClient<OllamaChatService>(client =>
+builder.Services.AddHttpClient<OpenAiCompatibleEmbeddingService>(client =>
 {
-    client.BaseAddress = ollamaBaseUrl;
-    client.Timeout = TimeSpan.FromMinutes(5);
-});
+    client.BaseAddress = chatBaseUrl;
+    client.Timeout = TimeSpan.FromMinutes(2);
+}).AddHttpMessageHandler<RetryTransientHandler>();
+
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<ProviderErrorHandler>();
 
 builder.Services.AddSingleton<VectorStore>();
 builder.Services.AddSingleton<ConversationStore>();
@@ -42,6 +53,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+app.UseExceptionHandler();
 app.UseCors("AllowReactDev");
 app.MapControllers();
 
